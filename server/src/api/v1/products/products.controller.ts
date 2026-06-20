@@ -94,6 +94,8 @@ export const importProductsFromCSV = async (req: Request, res: Response) => {
         currency: row.currency || "CNY",
         isActive: row.isActive === "false" ? false : true,
         images: row.images ? [row.images] : [],
+        videos: [],
+        keyFeatures: [],
       };
 
       // Look up or create supplier by companyName
