@@ -1,0 +1,255 @@
+﻿'use client';
+import React from 'react';
+import Link from 'next/link';
+import AdminLayout from '@/components/AdminLayout';
+import StatusBadge from '@/components/ui/StatusBadge';
+import dynamic from 'next/dynamic';
+import { ShoppingBag, Users, Truck, Clock, IndianRupee, AlertTriangle, ArrowRight, Sun, Plus, Download, MapPin, Eye, Camera } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
+import { useRouter } from 'next/navigation';
+import { adminApi, type AdminStats } from '@/lib/api/admin.api';
+
+// Lazy-load the recharts-backed charts so recharts is excluded from the
+// dashboard's initial bundle (it loads on the client after first paint).
+const ChartSkeleton = () => <div className="h-[240px] w-full rounded-lg bg-muted/40 animate-pulse" />;
+const RevenueChart = dynamic(() => import('@/components/admin/DashboardCharts').then(m => m.RevenueChart), { ssr: false, loading: ChartSkeleton });
+const OrdersByStatusChart = dynamic(() => import('@/components/admin/DashboardCharts').then(m => m.OrdersByStatusChart), { ssr: false, loading: ChartSkeleton });
+
+function Kpi({ icon: Icon, label, value, sub, accent, color, onClick }: any) {
+  return (
+    <div
+      onClick={onClick}
+      className={`bg-card rounded-xl p-4 sm:p-5 shadow-card border border-border card-hover border-l-4 ${accent}${onClick ? ' cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200' : ''}`}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{label}</p>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}><Icon className="w-4 h-4" /></div>
+      </div>
+      <p className="text-2xl sm:text-3xl font-700 font-tabular text-foreground">{value}</p>
+      <p className="text-[11px] text-muted-foreground font-500 mt-1">{sub}</p>
+    </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  const { user } = useAuth();
+  const perms = useAdminPermissions();
+  const router = useRouter();
+  const [today, setToday] = React.useState('');
+  const [stats, setStats] = React.useState<AdminStats | null>(null);
+  const [statsLoading, setStatsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  }, []);
+
+  React.useEffect(() => {
+    adminApi.getStats()
+      .then(r => setStats(r.data.data))
+      .catch(err => console.error('Failed to load admin stats', err))
+      .finally(() => setStatsLoading(false));
+  }, []);
+
+  function handleExportReports() {
+    let ordersData: any[] = [];
+    try {
+      ordersData = stats?.recentOrders ?? [];
+    } catch { ordersData = []; }
+
+    const headers = ['Order ID', 'Client', 'Items', 'Amount', 'Status', 'Date'];
+    const rows = ordersData.map((o: any) => [
+      o.orderId || o.id || '',
+      o.client || o.clientName || '',
+      o.itemNames || o.items || '',
+      o.amount || '',
+      o.status || '',
+      o.date || '',
+    ]);
+    const csv = [headers, ...rows]
+      .map(row => row.map((cell: any) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `elios-admin-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const pipelineNodes = [
+    { label: 'China Warehouse',          count: 12, color: 'bg-cyan-500',     ring: 'ring-cyan-100' },
+    { label: 'Consolidation Warehouse',  count: 5,  color: 'bg-indigo-500',   ring: 'ring-indigo-100' },
+    { label: 'In Transit',               count: 23, color: 'bg-[#5c5470]',   ring: 'ring-[#e8e4f0]' },
+    { label: 'India Warehouse',          count: 4,  color: 'bg-emerald-500',  ring: 'ring-emerald-100' },
+    { label: 'Out for Delivery',         count: 2,  color: 'bg-green-500',    ring: 'ring-green-100' },
+  ];
+
+  return (
+    <AdminLayout>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl font-700">Welcome back, {user?.name ?? 'there'} 👋</h1>
+          <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2">
+            <span>{today}</span><span>•</span><span className="inline-flex items-center gap-1"><Sun className="w-3.5 h-3.5 text-yellow-500" /> 33°C Sunny in Mumbai</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/all-orders" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" /> View All Orders</Link>
+          <Link href="/admin/requests" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" /> View All Requests</Link>
+          {perms.navSuppliers && (
+            <Link href="/admin/suppliers" className="btn-secondary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Supplier</Link>
+          )}
+          {perms.isFullAdmin && (
+            <button onClick={handleExportReports} className="btn-primary px-3 py-2 text-xs inline-flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /> Export Reports</button>
+          )}
+        </div>
+      </div>
+
+      <div className={`grid grid-cols-2 gap-3 mb-6 ${perms.canSeeGrandTotalsAndMargins ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-3 xl:grid-cols-5'}`}>
+        <Kpi icon={ShoppingBag} label="Total Orders"      value={statsLoading ? '—' : String(stats?.totalOrders ?? 0)}    sub="all time"         accent="border-[#c17b5c]" color="bg-[#fdf2ed] text-[#c17b5c]" onClick={() => router.push('/admin/all-orders')} />
+        {perms.isFullAdmin && (
+          <Kpi icon={Users}       label="Total Clients"   value={statsLoading ? '—' : String(stats?.totalClients ?? 0)}   sub="active accounts"  accent="border-[#5c5470]"   color="bg-[#f0eef8] text-[#5c5470]" onClick={() => router.push('/admin/users')} />
+        )}
+        <Kpi icon={Truck}       label="Active Orders"    value={statsLoading ? '—' : String(stats?.activeOrders ?? 0)}   sub="in pipeline"      accent="border-cyan-500"   color="bg-cyan-50 text-cyan-600" onClick={() => router.push('/admin/logistics')} />
+        <Kpi icon={Clock}       label="Pending Inquiries" value={statsLoading ? '—' : String(stats?.pendingInquiries ?? 0)} sub="need attention" accent="border-yellow-500" color="bg-yellow-50 text-yellow-600" onClick={() => router.push('/admin/requests?filter=awaiting-approval')} />
+        {perms.canSeeGrandTotalsAndMargins && (
+          <Kpi icon={IndianRupee} label="Total Inquiries"  value={statsLoading ? '—' : String(stats?.totalInquiries ?? 0)} sub="all time"       accent="border-emerald-500" color="bg-emerald-50 text-emerald-600" onClick={() => router.push('/admin/all-orders?filter=completed')} />
+        )}
+        <Kpi icon={AlertTriangle} label="Pending Payments" value={statsLoading ? '—' : String(stats?.pendingPayments ?? 0)} sub="to confirm"    accent="border-red-500"    color="bg-red-50 text-red-600" onClick={() => router.push('/admin/all-orders?filter=exception')} />
+      </div>
+
+      <div className={`grid lg:grid-cols-3 gap-5 mb-6 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:grid-cols-1'}`}>
+        {perms.canSeeGrandTotalsAndMargins && (
+        <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-card p-5">
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Monthly Revenue</h3><span className="text-xs text-muted-foreground">Last 6 months</span></div>
+          <RevenueChart data={stats?.monthlyRevenue ?? []} />
+        </div>
+        )}
+        <div className={`bg-card rounded-xl border border-border shadow-card p-5 ${perms.canSeeGrandTotalsAndMargins ? '' : 'lg:max-w-xl'}`}>
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Orders by Status</h3></div>
+          <OrdersByStatusChart data={stats?.ordersByStatus ?? []} />
+        </div>
+      </div>
+
+      <div className="bg-card rounded-xl border border-border shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-4"><h3 className="font-700">China → India Pipeline</h3><Link href="/admin/logistics" className="text-xs text-[#4A3B52] font-600 hover:underline inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Open logistics</Link></div>
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+          <span className="text-2xl flex-shrink-0">🇨🇳</span>
+          {pipelineNodes.map((n, i) => (
+            <React.Fragment key={n.label}>
+              <div className="flex-shrink-0 text-center">
+                <div className={`w-14 h-14 rounded-2xl ${n.color} ${n.ring} ring-4 text-white flex items-center justify-center text-xl font-700 mx-auto shadow-card`}>{n.count}</div>
+                <p className="text-[10px] font-600 text-muted-foreground mt-2 max-w-[88px]">{n.label}</p>
+              </div>
+              {i < pipelineNodes.length - 1 && <div className="flex-1 min-w-[24px] h-0.5 bg-gradient-to-r from-border to-border relative"><div className="absolute inset-y-0 -top-0.5 left-1/2 -translate-x-1/2 text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /></div></div>}
+            </React.Fragment>
+          ))}
+          <span className="text-2xl flex-shrink-0">🇮🇳</span>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5 mb-6">
+        <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700">Pending Actions</h3></div>
+          <div className="space-y-2">
+            {statsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : (stats && ((stats.pendingPayments ?? 0) > 0 || (stats.pendingInquiries ?? 0) > 0)) ? (
+              <>
+                {(stats.pendingInquiries ?? 0) > 0 && (
+                  <Link href="/admin/requests?filter=awaiting-approval" className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
+                    <div><p className="text-sm font-600 text-foreground">{stats.pendingInquiries} pending quotation{stats.pendingInquiries > 1 ? 's' : ''}</p><p className="text-xs text-muted-foreground">New sourcing requests need pricing</p></div>
+                    <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">Review <ArrowRight className="w-3 h-3" /></span>
+                  </Link>
+                )}
+                {(stats.pendingPayments ?? 0) > 0 && (
+                  <Link href="/admin/orders" className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors">
+                    <div><p className="text-sm font-600 text-foreground">{stats.pendingPayments} payment verification{stats.pendingPayments > 1 ? 's' : ''} pending</p><p className="text-xs text-muted-foreground">Confirm bank receipts for client orders</p></div>
+                    <span className="text-xs text-[#4A3B52] font-600 inline-flex items-center gap-1">Verify <ArrowRight className="w-3 h-3" /></span>
+                  </Link>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No pending actions</p>
+            )}
+          </div>
+        </div>
+        <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <h3 className="font-700 mb-3">Recent Activity</h3>
+          <ol className="space-y-3 max-h-72 overflow-y-auto">
+            {statsLoading ? (
+              <li className="text-sm text-muted-foreground">Loading...</li>
+            ) : (stats?.recentOrders ?? []).length === 0 && (stats?.recentInquiries ?? []).length === 0 ? (
+              <li className="text-sm text-muted-foreground">No recent activity</li>
+            ) : (
+              <>
+                {(stats?.recentOrders ?? []).slice(0, 3).map(o => (
+                  <li key={`ord-${o.id}`} className="flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0">📦</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground">Order <span className="font-tabular font-600">{o.orderNumber}</span> — <span className="text-xs">{o.client.companyName}</span></p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                  </li>
+                ))}
+                {(stats?.recentInquiries ?? []).slice(0, 2).map(r => (
+                  <li key={`inq-${r.id}`} className="flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0">📋</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground">New inquiry <span className="font-tabular font-600">{r.inquiryNumber}</span> from <span className="font-600">{r.client.companyName}</span></p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(r.createdAt).toLocaleDateString('en-IN')}</p>
+                    </div>
+                  </li>
+                ))}
+              </>
+            )}
+          </ol>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Orders</h3><Link href="/admin/all-orders" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
+          <div className="divide-y divide-border">
+            {statsLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+            ) : (stats?.recentOrders ?? []).length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No orders yet</div>
+            ) : (stats?.recentOrders ?? []).map(o => (
+              <Link key={o.id} href={`/admin/orders/${o.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="font-tabular font-600 text-sm truncate">{o.orderNumber}</p>
+                  <p className="text-xs text-muted-foreground truncate">{o.client.companyName} • {o.client.user.firstName} {o.client.user.lastName}</p>
+                </div>
+                {perms.canSeeOrderListAmounts && (
+                  <span className="font-tabular font-600 text-sm flex-shrink-0">₹{Number(o.totalINR).toLocaleString('en-IN')}</span>
+                )}
+                <StatusBadge status={o.status as any} />
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-border"><h3 className="font-700">Recent Inquiries</h3><Link href="/admin/requests" className="text-xs text-[#4A3B52] font-600">View all →</Link></div>
+          <div className="divide-y divide-border">
+            {statsLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+            ) : (stats?.recentInquiries ?? []).length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No inquiries yet</div>
+            ) : (stats?.recentInquiries ?? []).map(r => (
+              <Link key={r.id} href={`/admin/requests/${r.id}`} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5"><Camera className="w-3 h-3 text-[#4A3B52]" /><p className="font-tabular font-600 text-sm">{r.items?.[0]?.productName ?? 'Custom item'}</p></div>
+                  <p className="text-xs text-muted-foreground truncate">{r.client.companyName} • qty {r.items?.[0]?.quantity ?? '—'}</p>
+                </div>
+                <StatusBadge status={r.status as any} />
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

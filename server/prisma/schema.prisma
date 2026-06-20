@@ -1,0 +1,895 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direct (non-pooler) connection used only by `prisma migrate deploy` and
+  // introspection. The pooled `url` (pgbouncer, port 6543) can't hold the
+  // advisory locks migrations require, so deploys use this 5432 connection.
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  STAFF
+  CLIENT
+}
+
+enum OrderStatus {
+  CONFIRMED
+  PAYMENT_PENDING
+  ADVANCE_PAID
+  FULLY_PAID
+  SOURCING
+  QC_PENDING
+  QC_PASSED
+  QC_FAILED
+  REPACKING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentType {
+  ADVANCE
+  BALANCE
+  FULL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+enum InquiryStatus {
+  PENDING
+  REVIEWING
+  QUOTED
+  PARTIALLY_ACCEPTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  CONVERTED
+}
+
+enum QCStatus {
+  PENDING
+  PASSED
+  FAILED
+}
+
+enum ShipmentStatus {
+  PREPARING
+  DISPATCHED
+  IN_TRANSIT
+  CUSTOMS
+  DELIVERED
+}
+
+enum DisputeType {
+  REPLACEMENT
+  ISSUE
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum RequestStatus {
+  SUBMITTED
+  REVIEWING
+  QUOTED
+  PARTIALLY_ACCEPTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  CONVERTED
+}
+
+enum RequestItemStatus {
+  PENDING
+  QUOTED
+  ACCEPTED
+  REJECTED
+  COUNTERED
+}
+
+enum RequestItemType {
+  CATALOG
+  CUSTOM
+}
+
+enum RequestType {
+  SOURCING
+  QUOTATION
+  SAMPLE
+}
+
+// Quote lifecycle for a standalone logistics (shipping) request. Mirrors the
+// SourcingRequest flow but for a single shipping quote (not per-item).
+enum LogisticsStatus {
+  SUBMITTED
+  QUOTED
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  PAYMENT_PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+// Post-confirmation fulfillment phases shown on the client tracking timeline.
+enum LogisticsPhase {
+  AT_WAREHOUSE
+  FLIGHT_BOOKED
+  IN_TRANSIT
+  INDIA_WAREHOUSE
+}
+
+enum LogisticsDeliveryMode {
+  PICKUP
+  DELIVERY
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  phone           String?
+  role            Role      @default(CLIENT)
+  staffRole       String?
+  isActive        Boolean   @default(true)
+  isEmailVerified Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  isApproved      Boolean   @default(false)
+  inviteToken     String?
+  inviteExpiry    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  client             Client?
+  refreshTokens      RefreshToken[]
+  qcChecks           QualityCheck[]
+  emailVerifications EmailVerification[]
+  requestActivities  RequestActivity[]
+  requestMessages    RequestMessage[]
+  verifiedPayments        Payment[]        @relation("PaymentVerifiedBy")
+  verifiedRequestPayments RequestPayment[] @relation("RequestPaymentVerifiedBy")
+  verifiedLogisticsPayments LogisticsPayment[] @relation("LogisticsPaymentVerifiedBy")
+  logisticsMessages       LogisticsMessage[]
+  supportTicketMessages   SupportTicketMessage[]
+  pushSubscriptions  PushSubscription[]
+  notifications      Notification[]
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model EmailVerification {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("email_verifications")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@map("password_resets")
+}
+
+model Client {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  companyName  String
+  gstin        String?  @unique
+  addressLine1 String?
+  city         String?
+  state        String?
+  pincode      String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id])
+  inquiries         Inquiry[]
+  orders            Order[]
+  sourcingRequests  SourcingRequest[]
+  logisticsRequests LogisticsRequest[]
+  supportTickets    SupportTicket[]
+  disputes          Dispute[]
+
+  @@map("clients")
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  companyName  String
+  country      String   @default("China")
+  city         String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  notes        String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  products   Product[]
+  orderItems OrderItem[]
+
+  @@index([country])
+  @@map("suppliers")
+}
+
+model ProductCategory {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  description String?
+  parentId    String?
+
+  parent   ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children ProductCategory[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([slug])
+  @@map("product_categories")
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  unit        String    @default("PCS")
+  moq         Int       @default(1)
+  basePrice   Decimal   @db.Decimal(12, 2)
+  currency    String    @default("CNY")
+  supplierId  String?
+  categoryId  String?
+  images      String[]
+  videos      String[]
+  isActive    Boolean   @default(true)
+
+  // Admin catalog management fields
+  brand           String?
+  sku             String?
+  originCity      String?      // Chinese city of origin (Yiwu, Guangzhou, etc.)
+  priceRange      String?      // Display price range string (e.g. "¥35–55")
+  sampleAvailable Boolean     @default(false)
+  samplePrice     Decimal?    @db.Decimal(12, 2)
+  shortDescription String?
+  fullDescription  String?
+  keyFeatures     String[]
+  specifications  Json?        // Array of { key: string, value: string }
+  weight          String?
+  material        String?
+  tags            String?
+  isNew           Boolean     @default(false)
+  onSale          Boolean     @default(false)
+  emoji           String?
+  bgColor         String?      // Background color class for UI display
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  supplier      Supplier?        @relation(fields: [supplierId], references: [id])
+  category      ProductCategory? @relation(fields: [categoryId], references: [id])
+  inquiryItems  InquiryItem[]
+  orderItems    OrderItem[]
+  requestItems  RequestItem[]
+
+  @@index([slug])
+  @@index([supplierId])
+  @@index([categoryId])
+  @@index([isActive])
+  @@map("products")
+}
+
+model Inquiry {
+  id            String        @id @default(uuid())
+  inquiryNumber String        @unique
+  clientId      String
+  notes         String?
+  staffNotes    String?
+  status        InquiryStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  client Client        @relation(fields: [clientId], references: [id])
+  items  InquiryItem[]
+
+  @@index([clientId])
+  @@map("inquiries")
+}
+
+model InquiryItem {
+  id                 String        @id @default(uuid())
+  inquiryId          String
+  type               String        @default("CUSTOM")
+  productId          String?
+  productName        String
+  productDescription String?
+  quantity           Int
+  unit               String        @default("PCS")
+  targetPricePerUnit Decimal?      @db.Decimal(12, 2)
+  quotedPrice        Decimal?      @db.Decimal(12, 2)
+  notes              String?
+  status             InquiryStatus @default(PENDING)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  inquiry Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([inquiryId])
+  @@map("inquiry_items")
+}
+
+model Order {
+  id                String      @id @default(uuid())
+  orderNumber       String      @unique
+  clientId          String
+  status            OrderStatus @default(CONFIRMED)
+  displayStatus     String      @default("Payment Confirmed")
+  subtotalINR       Decimal     @db.Decimal(12, 2)
+  shippingCostINR   Decimal     @db.Decimal(12, 2) @default(0)
+  taxINR            Decimal     @db.Decimal(12, 2) @default(0)
+  totalINR          Decimal     @db.Decimal(12, 2)
+  advanceAmountINR  Decimal?    @db.Decimal(12, 2)
+  notes             String?
+  gstInvoice        Json?
+  completedStages   String[]    @default([])
+  deliveryPreference String?
+  deliveryAddress    String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  staffContactId  String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+
+  client          Client           @relation(fields: [clientId], references: [id])
+  items           OrderItem[]
+  shipment        Shipment?
+  payments        Payment[]
+  warehouseReport WarehouseReport?
+  disputes        Dispute[]
+  trackingUpdates Tracking[]
+
+  @@index([clientId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([displayStatus])
+  @@index([createdAt])
+  @@index([clientId, status])
+  @@map("orders")
+}
+
+model WarehouseReport {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id])
+
+  itemReports     Json?
+  reportSubmitted Boolean  @default(false)
+
+  repackPhotos    String[] @default([])
+  warehouseNote   String?
+  photosSentAt    DateTime?
+  finalWeightKg   Float?
+  finalVolumeCbm  Float?
+  repackNotes     String?
+  repackSaved     Boolean  @default(false)
+
+  outboundTrackingId String?
+  packingListUrl     String?
+  deliverySlipUrl    String?
+  sentToChina        Boolean  @default(false)
+
+  adminReplies    Json?
+
+  isReadByAdmin   Boolean   @default(false)
+  isReadByStaff   Boolean   @default(false)
+  lastUpdatedAt   DateTime?
+
+  clientApproved     Boolean?
+  clientConcern      String?
+  clientReviewedAt   DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isReadByAdmin])
+  @@index([isReadByStaff])
+  @@map("warehouse_reports")
+}
+
+model Tracking {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  stage      String
+  statusNote String?
+  updatedBy  String
+  updatedAt  DateTime @default(now()) @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+  @@map("tracking")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  type              PaymentType
+  amountINR         Decimal       @db.Decimal(12, 2)
+  status            PaymentStatus @default(PENDING)
+  proofImageBase64  String?
+  proofUrl          String?
+  proofThumbUrl     String?
+  proofFileName     String?
+  submittedAt       DateTime?
+  verifiedAt        DateTime?
+  verifiedByUserId  String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  verifiedBy User? @relation("PaymentVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@map("payments")
+}
+
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  productId    String?
+  supplierId   String?
+  quantity     Int
+  unitPriceCNY Decimal @db.Decimal(12, 2)
+  unitPriceINR Decimal @db.Decimal(12, 2)
+  totalINR     Decimal @db.Decimal(12, 2)
+  notes        String?
+  imageUrl     String?
+
+  order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product?     @relation(fields: [productId], references: [id])
+  supplier Supplier?    @relation(fields: [supplierId], references: [id])
+  qcCheck  QualityCheck?
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Shipment {
+  id                String         @id @default(uuid())
+  orderId           String         @unique
+  trackingNumber    String?
+  carrier           String?
+  status            ShipmentStatus @default(PREPARING)
+  dispatchedAt      DateTime?
+  estimatedDelivery DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("shipments")
+}
+
+model QualityCheck {
+  id              String    @id @default(uuid())
+  orderItemId     String    @unique
+  checkedByUserId String
+  status          QCStatus  @default(PENDING)
+  notes           String?
+  images          String[]
+  checkedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
+  checkedByUser User      @relation(fields: [checkedByUserId], references: [id])
+
+  @@map("quality_checks")
+}
+
+model SourcingRequest {
+  id               String        @id @default(uuid())
+  requestNumber    String        @unique
+  clientId         String
+  status           RequestStatus @default(SUBMITTED)
+  requestType      RequestType   @default(SOURCING)
+  totalBudgetINR   Decimal?      @db.Decimal(12, 2)
+  advanceAmountINR Decimal?      @db.Decimal(12, 2)
+  notes            String?
+  referenceNote    String?
+  staffNotes       String?
+  // Logistics estimate captured with the quotation (Stage 2). Request-level,
+  // nullable — persisted here instead of browser localStorage.
+  logisticsWeight     String?
+  logisticsMode       String?
+  logisticsPricePerKg Decimal? @db.Decimal(12, 2)
+  logisticsNote       String?
+  quotedAt         DateTime?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  convertedOrderId String?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  client     Client            @relation(fields: [clientId], references: [id])
+  items      RequestItem[]
+  activities RequestActivity[]
+  messages   RequestMessage[]
+  payments   RequestPayment[]
+
+  @@index([clientId])
+  @@index([requestNumber])
+  @@index([status])
+  @@index([createdAt])
+  @@index([clientId, status])
+  @@map("sourcing_requests")
+}
+
+model RequestItem {
+  id                 String            @id @default(uuid())
+  requestId          String
+  type               RequestItemType
+  productId          String?
+  productName        String
+  productDescription String?
+  quantity           Int
+  unit               String            @default("PCS")
+  targetPriceINR     Decimal?          @db.Decimal(12, 2)
+  quotedRMB          Decimal?          @db.Decimal(12, 2)
+  quotedINR          Decimal?          @db.Decimal(12, 2)
+  imageUrl           String?
+  imageThumbUrl      String?
+  referenceImageUrls String[]
+  referenceThumbUrls String[]
+  status             RequestItemStatus @default(PENDING)
+  clientResponse     String?
+  counterPriceINR    Decimal?          @db.Decimal(12, 2)
+  counterNote        String?
+  respondedAt        DateTime?
+  notes              String?
+  createdAt          DateTime          @default(now())
+
+  request SourcingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+
+  @@index([requestId])
+  @@index([status])
+  @@map("request_items")
+}
+
+model RequestActivity {
+  id        String   @id @default(uuid())
+  requestId String
+  userId    String
+  action    String
+  createdAt DateTime @default(now())
+
+  request SourcingRequest @relation(fields: [requestId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
+
+  @@map("request_activities")
+}
+
+model RequestMessage {
+  id        String   @id @default(uuid())
+  requestId String
+  senderId  String
+  senderRole String
+  text      String
+  createdAt DateTime @default(now())
+
+  request SourcingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender  User            @relation(fields: [senderId], references: [id])
+
+  @@index([requestId, createdAt])
+  @@map("request_messages")
+}
+
+model RequestPayment {
+  id               String        @id @default(uuid())
+  requestId        String
+  type             PaymentType
+  amountINR        Decimal       @db.Decimal(12, 2)
+  status           PaymentStatus @default(SUBMITTED)
+  proofImageBase64 String?
+  proofUrl         String?
+  proofThumbUrl    String?
+  proofFileName    String?
+  submittedAt      DateTime?
+  verifiedAt       DateTime?
+  verifiedByUserId String?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  request    SourcingRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  verifiedBy User?           @relation("RequestPaymentVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  @@index([requestId])
+  @@index([status])
+  @@map("request_payments")
+}
+
+// Standalone shipping request: client submits weight/CBM/method + packing list,
+// admin quotes (single quote), client accepts/rejects/counters, pays, then the
+// shipment moves through fulfillment phases. Replaces the browser-localStorage
+// logistics prototype.
+model LogisticsRequest {
+  id            String          @id @default(uuid())
+  requestNumber String          @unique
+  clientId      String
+  status        LogisticsStatus @default(SUBMITTED)
+
+  // Client-submitted shipment details
+  shippingMethod     String   // 'Air' | 'Express' | 'Sea'
+  weightKg           Decimal? @db.Decimal(12, 2)
+  volumeCbm          Decimal? @db.Decimal(12, 3)
+  packagingListUrls  String[] @default([])
+  packagingThumbUrls String[] @default([])
+  note               String?
+
+  // Admin quote (single quote — not per-item)
+  carrier           String?
+  shippingMode      String?
+  estimatedPriceINR Decimal?  @db.Decimal(12, 2)
+  pricePerKgCNY     Decimal?  @db.Decimal(12, 2)
+  eta               String?
+  quoteNote         String?
+  quotedAt          DateTime?
+
+  // Client counter offer
+  counterPriceINR Decimal?  @db.Decimal(12, 2)
+  counterNote     String?
+  counteredAt     DateTime?
+
+  // Post-confirmation fulfillment
+  phase           LogisticsPhase?
+  completedPhases String[]               @default([])
+  deliveryMode    LogisticsDeliveryMode?
+  deliveryAddress String?
+
+  // Warehouse slip + cargo receipt
+  warehouseSlipUrl      String?
+  warehouseSlipThumbUrl String?
+  slipUploadedAt        DateTime?
+  cargoConfirmedBy      String?
+  cargoConfirmedAt      DateTime?
+
+  // Lifecycle timestamps
+  acceptedAt   DateTime?
+  rejectedAt   DateTime?
+  confirmedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client   Client             @relation(fields: [clientId], references: [id])
+  payments LogisticsPayment[]
+  messages LogisticsMessage[]
+
+  @@index([clientId])
+  @@index([requestNumber])
+  @@index([status])
+  @@index([createdAt])
+  @@index([clientId, status])
+  @@map("logistics_requests")
+}
+
+model LogisticsPayment {
+  id                 String        @id @default(uuid())
+  logisticsRequestId String
+  type               PaymentType
+  amountINR          Decimal       @db.Decimal(12, 2)
+  status             PaymentStatus @default(SUBMITTED)
+  proofImageBase64   String?
+  proofUrl           String?
+  proofThumbUrl      String?
+  proofFileName      String?
+  submittedAt        DateTime?
+  verifiedAt         DateTime?
+  verifiedByUserId   String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  logisticsRequest LogisticsRequest @relation(fields: [logisticsRequestId], references: [id], onDelete: Restrict)
+  verifiedBy       User?            @relation("LogisticsPaymentVerifiedBy", fields: [verifiedByUserId], references: [id])
+
+  @@index([logisticsRequestId])
+  @@index([status])
+  @@map("logistics_payments")
+}
+
+model LogisticsMessage {
+  id                 String   @id @default(uuid())
+  logisticsRequestId String
+  senderId           String
+  senderRole         String
+  text               String
+  createdAt          DateTime @default(now())
+
+  logisticsRequest LogisticsRequest @relation(fields: [logisticsRequestId], references: [id], onDelete: Cascade)
+  sender           User             @relation(fields: [senderId], references: [id])
+
+  @@index([logisticsRequestId, createdAt])
+  @@map("logistics_messages")
+}
+
+model SupportTicket {
+  id              String              @id @default(uuid())
+  ticketNumber    String              @unique
+  clientId        String
+  orderId         String?
+  category        String
+  subject         String
+  description     String
+  status          SupportTicketStatus @default(OPEN)
+  priority        String?
+  clientLastReadAt DateTime?
+  staffLastReadAt  DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  client   Client                 @relation(fields: [clientId], references: [id])
+  messages SupportTicketMessage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id          String   @id @default(uuid())
+  ticketId    String
+  senderId    String
+  senderRole  String
+  text        String
+  attachments String[]
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
+}
+
+model Dispute {
+  id            String        @id @default(uuid())
+  orderId       String
+  clientId      String
+  type          DisputeType
+  reason        String
+  videoProofUrl String?
+  // Multiple photo/video proof attachments (data URLs). Replaces packing many
+  // files into the single videoProofUrl; legacy rows keep using videoProofUrl.
+  attachments   String[]
+  attachmentThumbs String[]
+  status        DisputeStatus @default(OPEN)
+  adminNote     String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([orderId])
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("disputes")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  type        String
+  title       String
+  message     String
+  read        Boolean  @default(false)
+  relatedType String?
+  relatedId   String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// Generic key-value store for platform-wide settings (e.g. cny_inr_rate).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}

@@ -1,0 +1,235 @@
+'use client';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import ClientLayout from '@/components/ClientLayout';
+import { useToast } from '@/components/ui/Toast';
+import { supportApi, type SupportTicketListItem } from '@/lib/api/support.api';
+import { uploadFiles } from '@/lib/upload';
+import { MessageCircle, Mail, Phone, ChevronDown, Paperclip, X, FileText, Play, ChevronRight } from 'lucide-react';
+
+const faqs = [
+  { q: 'How long does sourcing take?',         a: 'Typically 7–12 days from quotation acceptance until the goods reach our China warehouse.' },
+  { q: 'What payment methods do you accept?',  a: 'Bank transfer (NEFT/RTGS), UPI for advance, and payment gateways for amounts under ₹5L.' },
+  { q: 'How is customs duty calculated?',      a: 'Customs duty is based on the HSN code and CIF value. We provide an estimate upfront.' },
+  { q: 'Can I cancel an order?',               a: 'Yes, before payment confirmation. After sourcing begins, cancellation policies apply.' },
+  { q: 'What is the minimum order value?',     a: 'No minimum order value, but MOQs may apply per product based on supplier requirements.' },
+  { q: 'Do you handle GST invoicing?',         a: 'Yes, GST-compliant invoices are issued for all transactions.' },
+  { q: 'How does shipment tracking work?',     a: 'Real-time tracking is available in your dashboard with live map updates.' },
+  { q: 'What if items get damaged?',           a: 'We have insurance coverage and a strict QC process at our China warehouse.' },
+];
+
+const statusStyle: Record<string, string> = {
+  OPEN: 'bg-yellow-100 text-yellow-700',
+  IN_PROGRESS: 'bg-blue-100 text-blue-700',
+  RESOLVED: 'bg-emerald-100 text-emerald-700',
+  CLOSED: 'bg-muted text-muted-foreground',
+};
+const statusLabel: Record<string, string> = {
+  OPEN: 'Open', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed',
+};
+
+// url = uploaded storage path (persisted); preview = local object URL (display only).
+interface Attachment { name: string; type: 'image' | 'video' | 'pdf'; url: string; preview: string; size: number; }
+
+export default function SupportPage() {
+  const { addToast } = useToast();
+  const router = useRouter();
+  const [open, setOpen] = useState<number | null>(0);
+  const [form, setForm] = useState({ subject: '', category: 'General', desc: '' });
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [tickets, setTickets] = useState<SupportTicketListItem[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadTickets = useCallback(async () => {
+    try {
+      const res = await supportApi.list();
+      if (res.data.success) setTickets(res.data.data ?? []);
+    } catch { /* ignore */ }
+    finally { setLoadingTickets(false); }
+  }, []);
+
+  useEffect(() => { loadTickets(); }, [loadTickets]);
+
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (attachments.length + picked.length > 3) {
+      addToast({ type: 'warning', title: 'Max 3 attachments per ticket' });
+      return;
+    }
+    const valid = picked.filter(file => {
+      if (file.size > 5 * 1024 * 1024) { addToast({ type: 'warning', title: `"${file.name}" exceeds 5 MB and was skipped` }); return false; }
+      return true;
+    });
+    if (valid.length === 0) return;
+
+    // Upload straight to object storage; only the returned paths are persisted.
+    setUploading(true);
+    try {
+      const uploaded = await uploadFiles(valid, 'support');
+      const results: Attachment[] = uploaded.map((u, i) => {
+        const f = valid[i];
+        const type = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : 'pdf';
+        return { name: f.name, type, url: u.url, preview: URL.createObjectURL(f), size: f.size };
+      });
+      setAttachments(prev => [...prev, ...results].slice(0, 3));
+    } catch {
+      addToast({ type: 'error', title: 'Upload failed', description: 'Please check your connection and try again.' });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments(prev => {
+      const a = prev[idx];
+      if (a?.preview) URL.revokeObjectURL(a.preview);
+      return prev.filter((_, j) => j !== idx);
+    });
+  }
+
+  async function submitTicket() {
+    if (!form.subject.trim()) { addToast({ type: 'warning', title: 'Please add a subject' }); return; }
+    if (!form.desc.trim()) { addToast({ type: 'warning', title: 'Please describe your issue' }); return; }
+    setSubmitting(true);
+    try {
+      await supportApi.create({
+        subject: form.subject.trim(),
+        category: form.category,
+        description: form.desc.trim(),
+        attachments: attachments.map(a => a.url),
+      });
+      addToast({ type: 'success', title: 'Ticket submitted', description: 'Our team will respond shortly.' });
+      attachments.forEach(a => a.preview && URL.revokeObjectURL(a.preview));
+      setForm({ subject: '', category: 'General', desc: '' });
+      setAttachments([]);
+      loadTickets();
+    } catch {
+      addToast({ type: 'error', title: 'Could not submit', description: 'Please try again in a moment.' });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ClientLayout>
+      <h1 className="text-2xl font-700 mb-1">Help &amp; Support</h1>
+      <p className="text-sm text-muted-foreground mb-5">We're here to help 24/7</p>
+      <div className="grid sm:grid-cols-3 gap-3 mb-6">
+        {[
+          { icon: MessageCircle, l: 'WhatsApp', v: '+91 98765 43210',        bg: 'bg-green-50',  c: 'text-green-600' },
+          { icon: Mail,          l: 'Email',    v: 'support@elioswholesale.in', bg: 'bg-[#e4f4f4]',   c: 'text-[#4a9e9f]' },
+          { icon: Phone,         l: 'Call',     v: '+91 22 4567 8900',        bg: 'bg-[#f0eef8]', c: 'text-[#5c5470]' },
+        ].map(c => (
+          <div key={c.l} className="bg-card rounded-xl border border-border shadow-card p-4 flex items-center gap-3 card-hover">
+            <div className={`w-10 h-10 rounded-xl ${c.bg} ${c.c} flex items-center justify-center`}><c.icon className="w-5 h-5" /></div>
+            <div><p className="text-xs text-muted-foreground">{c.l}</p><p className="font-600 text-sm font-tabular">{c.v}</p></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="space-y-5">
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="font-700 mb-3">Submit a Ticket</h3>
+            <div className="space-y-2">
+              <input value={form.subject} onChange={e => setForm({...form, subject: e.target.value})} className="input-field" placeholder="Subject" />
+              <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="input-field">
+                <option>General</option><option>Order Issue</option><option>Payment</option><option>Account</option>
+              </select>
+              <textarea value={form.desc} onChange={e => setForm({...form, desc: e.target.value})} className="input-field" rows={4} placeholder="Describe your issue..." />
+
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {attachments.map((a, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-muted/40 rounded-lg px-2 py-1 border border-border">
+                      {a.type === 'image' ? (
+                        <button type="button" onClick={() => setLightbox(a.preview)}>
+                          <img src={a.preview} alt={a.name} className="w-8 h-8 object-cover rounded cursor-zoom-in" />
+                        </button>
+                      ) : a.type === 'video' ? (
+                        <div className="w-8 h-8 bg-slate-200 rounded flex items-center justify-center"><Play className="w-4 h-4 text-slate-600" /></div>
+                      ) : (
+                        <div className="w-8 h-8 bg-red-50 rounded flex items-center justify-center"><FileText className="w-4 h-4 text-red-500" /></div>
+                      )}
+                      <span className="text-[10px] text-muted-foreground max-w-[90px] truncate">{a.name}</span>
+                      <button type="button" onClick={() => removeAttachment(i)} className="ml-0.5 text-muted-foreground hover:text-foreground">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <input ref={fileInputRef} type="file" style={{ display: 'none' }} accept="image/*,video/*,.pdf" multiple onChange={handleFiles} />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading || attachments.length >= 3}
+                  title="Attach files (max 3, up to 5 MB each)"
+                  className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/40 disabled:opacity-40 border border-border"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                {uploading ? <span className="text-xs text-muted-foreground">Uploading…</span> : attachments.length > 0 && <span className="text-xs text-muted-foreground">{attachments.length}/3</span>}
+                <button onClick={submitTicket} disabled={submitting || uploading} className="btn-primary flex-1 py-2 text-sm disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Ticket'}</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-card rounded-xl border border-border shadow-card p-5">
+            <h3 className="font-700 mb-3">My Tickets</h3>
+            {loadingTickets ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading…</p>
+            ) : tickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No tickets yet.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {tickets.map(t => (
+                  <button key={t.id} onClick={() => router.push(`/support/${t.id}`)} className="w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-muted/30 -mx-2 px-2 rounded-lg transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-tabular text-xs font-600 text-primary">{t.ticketNumber}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-600 ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
+                        {t.unreadCount > 0 && <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-700 bg-yellow-100 text-yellow-700">{t.unreadCount}</span>}
+                      </div>
+                      <p className="text-sm font-500 truncate mt-0.5">{t.subject}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl border border-border shadow-card p-5">
+          <h3 className="font-700 mb-3">Frequently Asked Questions</h3>
+          <div className="divide-y divide-border">
+            {faqs.map((f, i) => (
+              <div key={i} className="py-3">
+                <button onClick={() => setOpen(open === i ? null : i)} className="w-full flex items-center justify-between text-left">
+                  <span className="text-sm font-500">{f.q}</span>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open === i ? 'rotate-180' : ''}`} />
+                </button>
+                {open === i && <p className="mt-2 text-sm text-muted-foreground">{f.a}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="attachment" className="max-w-full max-h-[90vh] rounded-xl shadow-xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/70"><X className="w-5 h-5" /></button>
+        </div>
+      )}
+    </ClientLayout>
+  );
+}

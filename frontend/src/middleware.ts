@@ -1,0 +1,126 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+// Name of the cookie that mirrors the access-token JWT (set by the client in
+// src/lib/api/axiosClient.ts). localStorage is invisible to Edge middleware, so
+// the signed token is mirrored into this cookie purely so it can be verified here.
+const ACCESS_TOKEN_COOKIE = 'elios_access_token';
+
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/catalog'];
+
+// ── Edge-compatible HS256 JWT verification (Web Crypto, no Node-only deps) ─────
+function base64UrlToBytes(b64url: string): Uint8Array<ArrayBuffer> {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(b64url.length / 4) * 4, '=');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+interface AccessPayload {
+  userId?: string;
+  role?: string;
+  exp?: number;
+}
+
+type VerifyResult =
+  | { status: 'valid' | 'expired'; payload: AccessPayload }
+  | { status: 'invalid' };
+
+// Verifies the HMAC-SHA256 signature, then checks expiry. A correctly-signed but
+// expired token returns 'expired' (NOT 'invalid') so the caller can let the
+// request through and allow the client to silently refresh the access token via
+// the httpOnly `refreshToken` cookie. That refresh cookie lives on the API
+// origin (the backend), so it is invisible to this Edge middleware — the
+// middleware therefore cannot refresh on its own and must defer to the client.
+// The backend stays the real gate: it re-validates every API call and rejects
+// truly-expired tokens, and the client redirects to /login if the refresh token
+// is also gone. A bad signature or malformed token returns 'invalid'.
+async function verifyAccessToken(token: string, secret: string): Promise<VerifyResult> {
+  const parts = token.split('.');
+  if (parts.length !== 3) return { status: 'invalid' };
+  const [headerB64, payloadB64, sigB64] = parts;
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      base64UrlToBytes(sigB64),
+      new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+    );
+    if (!valid) return { status: 'invalid' };
+
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadB64))) as AccessPayload;
+    if (typeof payload.exp === 'number' && Date.now() >= payload.exp * 1000) {
+      return { status: 'expired', payload };
+    }
+    return { status: 'valid', payload };
+  } catch {
+    return { status: 'invalid' };
+  }
+}
+
+function redirectToLogin(request: NextRequest, pathname: string) {
+  const loginUrl = new URL('/login', request.url);
+  loginUrl.searchParams.set('redirect', pathname);
+  return NextResponse.redirect(loginUrl);
+}
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'))) {
+    return NextResponse.next();
+  }
+
+  const secret = process.env.JWT_ACCESS_SECRET;
+  // Fail closed: without the shared signing secret we cannot verify any session,
+  // so protected routes require (re)authentication rather than trusting a cookie.
+  if (!secret) {
+    console.error(
+      '[middleware] JWT_ACCESS_SECRET is not set — cannot verify sessions. ' +
+        'Set it in the frontend environment; it must match the backend value.',
+    );
+    return redirectToLogin(request, pathname);
+  }
+
+  const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
+  const result: VerifyResult = token
+    ? await verifyAccessToken(token, secret)
+    : { status: 'invalid' };
+
+  // Absent token or a token whose signature doesn't verify → not authenticated.
+  // An 'expired' (but correctly-signed) token is allowed through so the client
+  // can refresh it on load; see verifyAccessToken above.
+  if (result.status === 'invalid') {
+    return redirectToLogin(request, pathname);
+  }
+
+  const role = result.payload.role ?? null; // 'ADMIN' | 'STAFF' | 'CLIENT' (from the signed JWT)
+  if (!role) {
+    return redirectToLogin(request, pathname);
+  }
+
+  // Role-based gating, driven entirely by the verified JWT (never a plain cookie).
+  if (pathname.startsWith('/admin') && role !== 'ADMIN' && role !== 'STAFF') {
+    return redirectToLogin(request, pathname);
+  }
+  if (pathname.startsWith('/client-dashboard') && role !== 'CLIENT') {
+    return redirectToLogin(request, pathname);
+  }
+  if (pathname.startsWith('/staff') && role !== 'STAFF') {
+    return redirectToLogin(request, pathname);
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/admin/:path*', '/client-dashboard/:path*', '/staff/:path*'],
+};
