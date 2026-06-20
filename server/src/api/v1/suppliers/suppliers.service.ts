@@ -1,5 +1,6 @@
 import { suppliersRepository } from "./suppliers.repository";
 import { getPagination, buildPaginationMeta } from "../../../utils/pagination";
+import { CreateSupplierInput } from "./suppliers.schema";
 
 interface SupplierQuery {
   page?: string;
@@ -9,6 +10,10 @@ interface SupplierQuery {
 }
 
 export const suppliersService = {
+  async createSupplier(data: CreateSupplierInput) {
+    return suppliersRepository.create(data);
+  },
+
   async getSuppliers(query: SupplierQuery) {
     const { page, limit, skip, take } = getPagination(query);
 

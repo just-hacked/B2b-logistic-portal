@@ -1,11 +1,21 @@
 import { Router } from "express";
-import { getSuppliers, getSupplierById } from "./suppliers.controller";
+import { getSuppliers, getSupplierById, createSupplier } from "./suppliers.controller";
 import { asyncHandler } from "../../../utils/asyncHandler";
-import { validateQueryParams } from "../../../middleware/validate";
+import { validateQueryParams, validate } from "../../../middleware/validate";
 import { authenticate } from "../../../middleware/authenticate";
 import { authorize } from "../../../middleware/authorize";
+import { createSupplierSchema } from "./suppliers.schema";
 
 const router = Router();
+
+// POST /api/v1/suppliers — ADMIN and STAFF only
+router.post(
+  "/",
+  authenticate,
+  authorize(["ADMIN", "STAFF"]),
+  validate(createSupplierSchema),
+  asyncHandler(createSupplier)
+);
 
 // GET /api/v1/suppliers — ADMIN and STAFF only
 router.get(

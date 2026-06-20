@@ -1,6 +1,13 @@
 import { Request, Response } from "express";
 import { suppliersService } from "./suppliers.service";
 import { ApiResponse } from "../../../utils/ApiResponse";
+import { CreateSupplierInput } from "./suppliers.schema";
+
+export const createSupplier = async (req: Request, res: Response) => {
+  const data = req.body as CreateSupplierInput;
+  const supplier = await suppliersService.createSupplier(data);
+  return ApiResponse.success(res, supplier, "Supplier created successfully", 201);
+};
 
 export const getSuppliers = async (req: Request, res: Response) => {
   const { page, limit, isVerified, search } = req.query as Record<string, string>;

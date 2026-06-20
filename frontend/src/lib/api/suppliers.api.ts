@@ -24,4 +24,15 @@ export const suppliersApi = {
 
   getSupplierById: (id: string) =>
     axiosClient.get<ApiResponse<ApiSupplier>>(`/suppliers/${id}`),
+
+  createSupplier: (data: {
+    companyName: string;
+    country?: string;
+    city?: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    notes?: string;
+    isVerified?: boolean;
+  }) => axiosClient.post<ApiResponse<ApiSupplier>>('/suppliers', data),
 };

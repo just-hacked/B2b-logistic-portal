@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { suppliersApi, type ApiSupplier } from '@/lib/api/suppliers.api';
-import { Star, X, Search } from 'lucide-react';
+import { Star, X, Search, Plus } from 'lucide-react';
 
 interface LocalSupplier {
   id: string;
@@ -44,6 +44,20 @@ export default function AdminSuppliersPage() {
   const [suppliers, setSuppliers] = useState<LocalSupplier[]>([]);
   const [viewing, setViewing] = useState<LocalSupplier | null>(null);
   const [q, setQ] = useState('');
+  
+  const [adding, setAdding] = useState(false);
+  const [newSupplier, setNewSupplier] = useState({
+    companyName: '',
+    country: 'China',
+    city: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    notes: '',
+    isVerified: true
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     suppliersApi.getSuppliers({ limit: 100 })
@@ -54,12 +68,45 @@ export default function AdminSuppliersPage() {
       .catch(() => {});
   }, []);
 
+  const handleAddSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupplier.companyName.trim()) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const response = await suppliersApi.createSupplier({
+        ...newSupplier,
+        companyName: newSupplier.companyName.trim()
+      });
+      const added = response.data?.data;
+      if (added) {
+        setSuppliers(prev => [...prev, apiToSupplier(added)]);
+        setAdding(false);
+        setNewSupplier({
+          companyName: '',
+          country: 'China',
+          city: '',
+          contactName: '',
+          contactEmail: '',
+          contactPhone: '',
+          notes: '',
+          isVerified: true
+        });
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to create supplier');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const filtered = suppliers.filter(s => !q || [s.name, s.city, s.contactPerson, ...s.categories].join(' ').toLowerCase().includes(q.toLowerCase()));
 
   return (
     <AdminLayout>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-5">
         <div><h1 className="text-2xl font-700">Supplier Management</h1><p className="text-sm text-muted-foreground mt-1">China-based suppliers • {suppliers.length} total</p></div>
+        <button onClick={() => { setError(''); setAdding(true); }} className="btn-primary flex items-center gap-1.5 self-start sm:self-auto"><Plus className="w-4 h-4" /> Add Supplier</button>
       </div>
       <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name, city, category..." className="input-field !pl-10 max-w-md" /></div>
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
@@ -97,6 +144,57 @@ export default function AdminSuppliersPage() {
             <div><p className="text-[10px] uppercase text-muted-foreground">Rating</p><Stars rating={viewing.rating} /></div>
             <div><p className="text-[10px] uppercase text-muted-foreground">Products</p><p className="font-tabular font-700">{viewing.productsCount}</p></div>
           </div>
+        </div></div>
+      )}
+
+      {adding && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto pt-4 md:pt-8" onClick={() => setAdding(false)}><div onClick={e => e.stopPropagation()} className="bg-card rounded-2xl w-full max-w-lg p-5 mb-4 mx-4">
+          <div className="flex items-center justify-between mb-3"><h3 className="font-700 text-lg">Add New Supplier</h3><button onClick={() => setAdding(false)} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center"><X className="w-4 h-4" /></button></div>
+          <form onSubmit={handleAddSupplier}>
+            {error && <div className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200 mb-3">{error}</div>}
+            <div className="flex flex-col gap-3 text-sm mb-4">
+              <div>
+                <label className="text-[10px] uppercase text-muted-foreground font-600">Company Name *</label>
+                <input required value={newSupplier.companyName} onChange={e => setNewSupplier(prev => ({ ...prev, companyName: e.target.value }))} className="input-field mt-1" placeholder="e.g. Shanghai Textiles" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground font-600">City</label>
+                  <input value={newSupplier.city} onChange={e => setNewSupplier(prev => ({ ...prev, city: e.target.value }))} className="input-field mt-1" placeholder="e.g. Shanghai" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground font-600">Country</label>
+                  <input value={newSupplier.country} onChange={e => setNewSupplier(prev => ({ ...prev, country: e.target.value }))} className="input-field mt-1" placeholder="e.g. China" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground font-600">Contact Person</label>
+                  <input value={newSupplier.contactName} onChange={e => setNewSupplier(prev => ({ ...prev, contactName: e.target.value }))} className="input-field mt-1" placeholder="Name" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase text-muted-foreground font-600">Phone</label>
+                  <input value={newSupplier.contactPhone} onChange={e => setNewSupplier(prev => ({ ...prev, contactPhone: e.target.value }))} className="input-field mt-1" placeholder="Phone number" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase text-muted-foreground font-600">Email</label>
+                <input type="email" value={newSupplier.contactEmail} onChange={e => setNewSupplier(prev => ({ ...prev, contactEmail: e.target.value }))} className="input-field mt-1" placeholder="Email address" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase text-muted-foreground font-600">Notes</label>
+                <textarea value={newSupplier.notes} onChange={e => setNewSupplier(prev => ({ ...prev, notes: e.target.value }))} className="input-field mt-1 min-h-[60px]" placeholder="Additional supplier notes..." />
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <input type="checkbox" id="isVerified" checked={newSupplier.isVerified} onChange={e => setNewSupplier(prev => ({ ...prev, isVerified: e.target.checked }))} className="rounded border-border text-[#4A3B52]" />
+                <label htmlFor="isVerified" className="text-xs font-500 cursor-pointer">Mark as Verified Supplier</label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setAdding(false)} className="btn-secondary text-xs px-4 py-2">Cancel</button>
+              <button type="submit" disabled={submitting} className="btn-primary text-xs px-4 py-2 disabled:opacity-50">{submitting ? 'Creating...' : 'Create Supplier'}</button>
+            </div>
+          </form>
         </div></div>
       )}
     </AdminLayout>

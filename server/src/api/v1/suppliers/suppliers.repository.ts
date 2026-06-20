@@ -1,5 +1,6 @@
 import prisma from "../../../config/prisma";
 import { ApiError } from "../../../utils/ApiError";
+import { CreateSupplierInput } from "./suppliers.schema";
 
 interface SupplierFilters {
   isVerified?: boolean;
@@ -9,6 +10,28 @@ interface SupplierFilters {
 }
 
 export const suppliersRepository = {
+  async create(data: CreateSupplierInput) {
+    const existing = await prisma.supplier.findFirst({
+      where: { companyName: { equals: data.companyName.trim(), mode: "insensitive" } },
+    });
+    if (existing) {
+      throw ApiError.badRequest(`Supplier with company name "${data.companyName}" already exists`);
+    }
+
+    return prisma.supplier.create({
+      data: {
+        companyName: data.companyName.trim(),
+        country: data.country || "China",
+        city: data.city || null,
+        contactName: data.contactName || null,
+        contactEmail: data.contactEmail || null,
+        contactPhone: data.contactPhone || null,
+        notes: data.notes || null,
+        isVerified: data.isVerified ?? false,
+      },
+    });
+  },
+
   async findAll(filters: SupplierFilters) {
     const { isVerified, search, skip, take } = filters;
 
