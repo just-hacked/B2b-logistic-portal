@@ -102,6 +102,13 @@ function initialsFromName(name: string) {
     .toUpperCase();
 }
 
+// Client-side cache to persist disputes/notifications across page transitions (since AdminLayout remounts on every page)
+let cachedOpenDisputeCount = 0;
+let lastDisputesFetchedAt = 0;
+
+let cachedNotifications: ApiNotification[] = [];
+let lastNotificationsFetchedAt = 0;
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -124,39 +131,59 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
-  const [adminNotifs, setAdminNotifs] = useState<ApiNotification[]>([]);
+  const [adminNotifs, setAdminNotifs] = useState<ApiNotification[]>(() => cachedNotifications);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const [openDisputeCount, setOpenDisputeCount] = useState(0);
+  const [openDisputeCount, setOpenDisputeCount] = useState(() => cachedOpenDisputeCount);
 
   // Register web push once after login
   useEffect(() => { registerPushNotifications(); }, []);
 
-  const fetchNotifs = useCallback(() => {
+  const fetchNotifs = useCallback((force = false) => {
+    // Avoid double fetching on layout remount if fetched in the last 15 seconds
+    if (!force && Date.now() - lastNotificationsFetchedAt < 15000) {
+      return;
+    }
     notificationsApi.getNotifications({ limit: 10 })
-      .then(r => setAdminNotifs(r.data.data))
+      .then(r => {
+        const notifs = r.data.data;
+        cachedNotifications = notifs;
+        lastNotificationsFetchedAt = Date.now();
+        setAdminNotifs(notifs);
+      })
       .catch(() => {/* silently fail — bell just stays empty */});
   }, []);
 
   useEffect(() => {
     fetchNotifs();
-    const interval = setInterval(fetchNotifs, 30000);
+    const interval = setInterval(() => fetchNotifs(true), 30000);
     return () => clearInterval(interval);
   }, [fetchNotifs]);
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
     if (!token) return;
-    function fetchOpenDisputes() {
+    function fetchOpenDisputes(force = false) {
+      // Avoid double fetching on layout remount if fetched in the last 15 seconds
+      if (!force && Date.now() - lastDisputesFetchedAt < 15000) {
+        return;
+      }
       fetch('/api/disputes/count/open', {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       })
         .then(r => r.json())
-        .then(d => { if (d.success) setOpenDisputeCount(d.data?.count ?? 0); })
+        .then(d => {
+          if (d.success) {
+            const count = d.data?.count ?? 0;
+            cachedOpenDisputeCount = count;
+            lastDisputesFetchedAt = Date.now();
+            setOpenDisputeCount(count);
+          }
+        })
         .catch(() => {});
     }
     fetchOpenDisputes();
-    const iv = setInterval(fetchOpenDisputes, 60000);
+    const iv = setInterval(() => fetchOpenDisputes(true), 60000);
     return () => clearInterval(iv);
   }, []);
 

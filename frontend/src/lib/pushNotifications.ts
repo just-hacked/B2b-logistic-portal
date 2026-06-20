@@ -13,6 +13,7 @@ import axiosClient from './api/axiosClient';
 
 const SW_PATH = '/sw.js';
 const LS_KEY  = 'elios_push_endpoint'; // avoid re-subscribing the same endpoint
+let cachedVapidKey: string | null = null;
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -35,19 +36,25 @@ export async function registerPushNotifications(): Promise<void> {
     // 1. Register service worker
     const registration = await navigator.serviceWorker.register(SW_PATH);
 
-    // 2. Get VAPID public key
-    const keyRes = await axiosClient.get<{ success: boolean; data: { publicKey: string } }>(
-      '/push/vapid-public-key'
-    );
-    const vapidPublicKey = keyRes.data?.data?.publicKey;
-    if (!vapidPublicKey) return;
-
-    // 3. Check existing subscription
+    // 2. Check existing subscription first to avoid redundant API calls
     let subscription = await registration.pushManager.getSubscription();
-
-    // If already subscribed and we already saved it, nothing to do
     const savedEndpoint = localStorage.getItem(LS_KEY);
-    if (subscription && subscription.endpoint === savedEndpoint) return;
+    if (subscription && subscription.endpoint === savedEndpoint) {
+      return; // Already subscribed and synced with server
+    }
+
+    // 3. Get VAPID public key (utilize in-memory cache if available)
+    let vapidPublicKey = cachedVapidKey;
+    if (!vapidPublicKey) {
+      const keyRes = await axiosClient.get<{ success: boolean; data: { publicKey: string } }>(
+        '/push/vapid-public-key'
+      );
+      vapidPublicKey = keyRes.data?.data?.publicKey;
+      if (vapidPublicKey) {
+        cachedVapidKey = vapidPublicKey;
+      }
+    }
+    if (!vapidPublicKey) return;
 
     // 4. Ask browser for permission (won't show dialog if already granted)
     const permission = await Notification.requestPermission();
