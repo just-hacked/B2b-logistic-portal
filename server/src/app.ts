@@ -43,6 +43,9 @@ const staticAllowedOrigins = [
 // project name + team slug so arbitrary *.vercel.app sites are NOT allowed.
 const allowedOriginPatterns = [
   /^https:\/\/elioswholesale-[a-z0-9-]+-palaashika26-3692s-projects\.vercel\.app$/,
+  /^https:\/\/b2b-logistic-portal-[a-z0-9-]+-just-hacked(?:-s-projects)?\.vercel\.app$/,
+  /^https:\/\/b2b-logistic-portal-[a-z0-9-]+-just-hacked\.vercel\.app$/,
+  /^https:\/\/b2b-logistic-portal\.vercel\.app$/,
 ];
 
 const isOriginAllowed = (origin: string): boolean =>
