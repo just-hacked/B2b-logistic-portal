@@ -96,9 +96,9 @@ export const importProductsFromCSV = async (req: Request, res: Response) => {
         images: row.images ? [row.images] : [],
       };
 
-      // Look up supplier by companyName
+      // Look up or create supplier by companyName
       if (row.supplierName && row.supplierName.trim() !== "") {
-        const supplier = await prisma.supplier.findFirst({
+        let supplier = await prisma.supplier.findFirst({
           where: {
             companyName: {
               equals: row.supplierName.trim(),
@@ -106,17 +106,21 @@ export const importProductsFromCSV = async (req: Request, res: Response) => {
             },
           },
         });
-        if (supplier) {
-          productData.supplierId = supplier.id;
-        } else {
-          skipped.push({ row: row.name, reason: `Supplier "${row.supplierName}" not found in system` });
-          continue;
+        if (!supplier) {
+          supplier = await prisma.supplier.create({
+            data: {
+              companyName: row.supplierName.trim(),
+              country: "China",
+              isVerified: true,
+            },
+          });
         }
+        productData.supplierId = supplier.id;
       }
 
-      // Look up category by name
+      // Look up or create category by name
       if (row.categoryName && row.categoryName.trim() !== "") {
-        const category = await prisma.productCategory.findFirst({
+        let category = await prisma.productCategory.findFirst({
           where: {
             name: {
               equals: row.categoryName.trim(),
@@ -124,12 +128,15 @@ export const importProductsFromCSV = async (req: Request, res: Response) => {
             },
           },
         });
-        if (category) {
-          productData.categoryId = category.id;
-        } else {
-          skipped.push({ row: row.name, reason: `Category "${row.categoryName}" not found in system` });
-          continue;
+        if (!category) {
+          category = await prisma.productCategory.create({
+            data: {
+              name: row.categoryName.trim(),
+              slug: row.categoryName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
+            },
+          });
         }
+        productData.categoryId = category.id;
       }
 
       try {
