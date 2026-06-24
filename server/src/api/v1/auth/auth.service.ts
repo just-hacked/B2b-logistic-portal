@@ -172,7 +172,7 @@ export const authService = {
     return sanitizeUser(user as unknown as Record<string, unknown>);
   },
 
-  async registerClient(data: RegisterClientInput) {
+  async registerClient(data: RegisterClientInput, origin?: string) {
     // 1. Check for an existing account. A verified account blocks re-registration.
     //    A still-unverified account is stale (e.g. a previous attempt whose
     //    verification email never sent) — delete it so the email is freed up and
@@ -209,7 +209,8 @@ export const authService = {
     );
 
     // 4. Build verification URL
-    const verifyUrl = `${config.FRONTEND_URL}/verify-email?token=${token}`;
+    const baseUrl = origin || config.FRONTEND_URL;
+    const verifyUrl = `${baseUrl}/verify-email?token=${token}`;
 
     // 5. Log URL in development for easy testing without real email
     if (config.NODE_ENV === "development") {
@@ -241,7 +242,7 @@ export const authService = {
     };
   },
 
-  async resendVerification(email: string) {
+  async resendVerification(email: string, origin?: string) {
     // Always return the same message so this endpoint can't be used to probe
     // which emails have accounts.
     const genericMessage =
@@ -258,7 +259,8 @@ export const authService = {
     await authRepository.invalidateUserVerificationTokens(user.id);
     const token = await authRepository.createEmailVerificationToken(user.id);
 
-    const verifyUrl = `${config.FRONTEND_URL}/verify-email?token=${token}`;
+    const baseUrl = origin || config.FRONTEND_URL;
+    const verifyUrl = `${baseUrl}/verify-email?token=${token}`;
     if (config.NODE_ENV === "development") {
       console.log("\n✉  RESEND VERIFICATION URL:", verifyUrl, "\n");
     }
@@ -374,7 +376,7 @@ export const authService = {
     return { message: "Account activated. You can now log in." };
   },
 
-  async forgotPassword(email: string) {
+  async forgotPassword(email: string, origin?: string) {
     const genericMessage =
       "If an account with that email exists, a password reset link has been sent.";
 
@@ -389,7 +391,8 @@ export const authService = {
     // Create fresh token
     const token = await authRepository.createPasswordResetToken(email);
 
-    const resetUrl = `${config.FRONTEND_URL}/reset-password?token=${token}`;
+    const baseUrl = origin || config.FRONTEND_URL;
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
     if (config.NODE_ENV === "development") {
       console.log("\n🔑 RESET PASSWORD URL:", resetUrl, "\n");
     }

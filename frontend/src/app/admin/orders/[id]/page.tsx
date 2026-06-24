@@ -444,9 +444,13 @@ export default function AdminOrderDetailPage({ params }: { params: Promise<{ id:
   }, [id]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`logistics-estimate-${id}`);
-    if (saved) { try { setLogisticsEstimate(JSON.parse(saved)); } catch {} }
-  }, [id]);
+    if (apiOrder?.logisticsEstimate) {
+      setLogisticsEstimate(apiOrder.logisticsEstimate);
+    } else {
+      const saved = localStorage.getItem(`logistics-estimate-${id}`);
+      if (saved) { try { setLogisticsEstimate(JSON.parse(saved)); } catch {} }
+    }
+  }, [id, apiOrder]);
 
   useEffect(() => {
     const orderUuid = apiOrder?.id;

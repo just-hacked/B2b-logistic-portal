@@ -169,6 +169,25 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
           fetchAttempts.current = 0;
           setApiRequest(apiReq);
           applyApiItems(apiReq);
+          if (apiReq.logisticsWeight != null) setLogisticsWeight(apiReq.logisticsWeight);
+          if (apiReq.logisticsMode != null) setLogisticsMode(apiReq.logisticsMode);
+          if (apiReq.logisticsPricePerKg != null) setLogisticsPricePerKg(String(apiReq.logisticsPricePerKg));
+          if (apiReq.logisticsNote != null) setLogisticsNote(apiReq.logisticsNote);
+          if (apiReq.logisticsWeight != null || apiReq.logisticsMode != null || apiReq.logisticsPricePerKg != null || apiReq.logisticsNote != null) {
+            setLogisticsSaved(true);
+          } else {
+            const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
+            if (savedLogistics) {
+              try {
+                const l = JSON.parse(savedLogistics);
+                setLogisticsWeight(l.weight ?? '');
+                setLogisticsMode(l.mode ?? 'Standard Air');
+                setLogisticsPricePerKg(l.pricePerKg ?? '');
+                setLogisticsNote(l.note ?? DEFAULT_LOGISTICS_NOTE);
+                setLogisticsSaved(true);
+              } catch {}
+            }
+          }
           if (['ACCEPTED', 'PARTIALLY_ACCEPTED', 'CONVERTED'].includes(apiReq.status)) {
             fetchRequestPayments();
           }
@@ -236,17 +255,6 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
     fetchRequest();
     setPaymentProof(loadPaymentProof(id));
     setPaymentConfirmed(loadPaymentConfirmed(id));
-    const savedLogistics = localStorage.getItem(`logistics-estimate-${id}`);
-    if (savedLogistics) {
-      try {
-        const l = JSON.parse(savedLogistics);
-        setLogisticsWeight(l.weight ?? '');
-        setLogisticsMode(l.mode ?? 'Standard Air');
-        setLogisticsPricePerKg(l.pricePerKg ?? '');
-        setLogisticsNote(l.note ?? DEFAULT_LOGISTICS_NOTE);
-        setLogisticsSaved(true);
-      } catch {}
-    }
   }, [id]);
 
   const client = apiRequest?.client ?? null;
@@ -445,15 +453,27 @@ export default function AdminRequestDetailPage({ params }: { params: Promise<{ i
   function moreInfo() {
     addToast({ type: 'info', title: 'Info requested from client' });
   }
-  function saveLogistics() {
-    localStorage.setItem(`logistics-estimate-${id}`, JSON.stringify({
-      weight: logisticsWeight,
-      mode: logisticsMode,
-      pricePerKg: logisticsPricePerKg,
-      note: logisticsNote,
-    }));
-    setLogisticsSaved(true);
-    addToast({ type: 'success', title: 'Logistics saved', description: 'Logistics estimate is now visible to client.' });
+  async function saveLogistics() {
+    if (!apiRequest) {
+      setLogisticsSaved(true);
+      addToast({ type: 'success', title: 'Logistics saved' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await requestsApi.updateLogistics(id, {
+        weight: logisticsWeight,
+        mode: logisticsMode,
+        pricePerKg: logisticsPricePerKg,
+        note: logisticsNote,
+      });
+      setLogisticsSaved(true);
+      addToast({ type: 'success', title: 'Logistics saved', description: 'Logistics estimate is now visible to client.' });
+    } catch {
+      addToast({ type: 'error', title: 'Save failed', description: 'Could not save the logistics estimate. Please try again.' });
+    } finally {
+      setActionLoading(false);
+    }
   }
   function confirmPayment() {
     savePaymentConfirmed(id);

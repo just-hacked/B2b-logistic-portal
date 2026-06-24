@@ -39,7 +39,8 @@ export const register = async (req: Request, res: Response) => {
 };
 
 export const registerClient = async (req: Request, res: Response) => {
-  const result = await authService.registerClient(req.body as RegisterClientInput);
+  const origin = req.headers.origin as string | undefined;
+  const result = await authService.registerClient(req.body as RegisterClientInput, origin);
   return ApiResponse.success(res, null, result.message, 201);
 };
 
@@ -53,7 +54,8 @@ export const verifyEmail = async (req: Request, res: Response) => {
 
 export const resendVerification = async (req: Request, res: Response) => {
   const { email } = req.body as { email: string };
-  const result = await authService.resendVerification(email);
+  const origin = req.headers.origin as string | undefined;
+  const result = await authService.resendVerification(email, origin);
   return ApiResponse.success(res, null, result.message);
 };
 
@@ -104,7 +106,8 @@ export const acceptInvite = async (req: Request, res: Response) => {
 
 export const forgotPassword = async (req: Request, res: Response) => {
   const { email } = req.body as ForgotPasswordInput;
-  const result = await authService.forgotPassword(email);
+  const origin = req.headers.origin as string | undefined;
+  const result = await authService.forgotPassword(email, origin);
   return ApiResponse.success(res, null, result.message);
 };
 

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import React, { useState, use, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
@@ -146,6 +146,7 @@ function mapApiOrderToRow(o: ApiOrder) {
       totalInr: parseFloat(i.totalINR || '0'),
       imageUrl: i.imageUrl ?? i.product?.images?.[0] ?? null,
     })),
+    logisticsEstimate: (o as any).logisticsEstimate ?? null,
   };
 }
 
@@ -362,11 +363,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem(`logistics-estimate-${id}`);
-    if (saved) {
-      try { setLogisticsEstimate(JSON.parse(saved)); } catch {}
+    if (liveOrder?.logisticsEstimate) {
+      setLogisticsEstimate(liveOrder.logisticsEstimate);
+    } else {
+      const saved = localStorage.getItem(`logistics-estimate-${id}`);
+      if (saved) {
+        try { setLogisticsEstimate(JSON.parse(saved)); } catch {}
+      }
     }
-  }, [id]);
+  }, [id, liveOrder]);
 
   // Disputes fetched for this order (for replacement status display)
   const [orderDisputes, setOrderDisputes] = useState<any[]>([]);

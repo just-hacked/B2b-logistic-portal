@@ -204,6 +204,10 @@ export const ordersRepository = {
         where: { convertedOrderId: id },
         select: {
           id: true,
+          logisticsWeight: true,
+          logisticsMode: true,
+          logisticsPricePerKg: true,
+          logisticsNote: true,
           payments: {
             orderBy: { createdAt: "desc" },
             select: {
@@ -231,11 +235,19 @@ export const ordersRepository = {
     }
 
     const requestPayments = sourcingRequest?.payments ?? [];
+    const logisticsEstimate = sourcingRequest
+      ? {
+          weight: sourcingRequest.logisticsWeight,
+          mode: sourcingRequest.logisticsMode,
+          pricePerKg: sourcingRequest.logisticsPricePerKg != null ? String(sourcingRequest.logisticsPricePerKg) : null,
+          note: sourcingRequest.logisticsNote,
+        }
+      : null;
     // Convert object-storage paths (order item images copied from request
     // reference images; request-payment proofs) to short-lived signed read URLs.
     await signImageFields(order.items, { singles: ["imageUrl"] });
     await signImageFields(requestPayments, { singles: ["proofUrl", "proofThumbUrl"] });
-    return { ...order, requestPayments };
+    return { ...order, requestPayments, logisticsEstimate };
   },
 
   async getGSTInvoice(id: string) {
