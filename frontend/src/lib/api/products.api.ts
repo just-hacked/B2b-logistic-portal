@@ -19,6 +19,8 @@ export interface CreateProductPayload {
   currency?: string;
   supplierId?: string | null;
   categoryId?: string | null;
+  category?: string;
+  subcategory?: string;
   images?: string[];
   videos?: string[];
   brand?: string | null;

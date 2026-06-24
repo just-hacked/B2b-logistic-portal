@@ -41,7 +41,11 @@ export const productsRepository = {
         skip,
         take,
         include: {
-          category: true,
+          category: {
+            include: {
+              parent: true,
+            },
+          },
           supplier: {
             select: {
               id: true,
@@ -86,7 +90,11 @@ export const productsRepository = {
     return prisma.product.create({
       data: data as Prisma.ProductCreateInput,
       include: {
-        category: true,
+        category: {
+          include: {
+            parent: true,
+          },
+        },
         supplier: true,
       },
     });
@@ -97,7 +105,11 @@ export const productsRepository = {
       where: { id },
       data: data as Prisma.ProductUpdateInput,
       include: {
-        category: true,
+        category: {
+          include: {
+            parent: true,
+          },
+        },
         supplier: true,
       },
     });

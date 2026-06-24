@@ -118,8 +118,8 @@ function mapApiToCatalog(p: ApiProduct): CatalogProduct {
     id: p.id,
     emoji: p.emoji || '\u{1F4E6}',
     name: p.name,
-    category: p.category?.name || '',
-    subcategory: p.category?.parent?.name || p.category?.name || '',
+    category: p.category?.parent?.name || p.category?.name || '',
+    subcategory: p.category?.parent ? p.category.name : '',
     brand: p.brand || '',
     originCity: p.originCity || '',
     sku: p.sku || '',
@@ -173,6 +173,8 @@ function formToPayload(form: Omit<CatalogProduct, 'id'>): CreateProductPayload {
     onSale: form.onSale,
     isActive: form.active,
     categoryId: form.categoryId || null,
+    category: form.category,
+    subcategory: form.subcategory,
   };
 }
 

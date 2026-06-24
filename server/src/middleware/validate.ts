@@ -18,6 +18,8 @@ export const validate = (schema: ZodSchema) => (
       message: issue.message,
     }));
 
+    console.error("[VALIDATION FAILED]", JSON.stringify(errors));
+
     res.status(422).json({
       success: false,
       message: "Validation failed",
