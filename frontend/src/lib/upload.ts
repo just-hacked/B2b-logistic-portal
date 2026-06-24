@@ -1,4 +1,5 @@
-import axiosClient from './api/axiosClient';
+import axiosClient, { TOKEN_KEY } from './api/axiosClient';
+import { resolveApiBaseUrl } from './apiBase';
 
 // Direct-to-storage uploads. The browser asks the backend for a short-lived signed
 // upload URL, uploads the bytes straight to Supabase Storage (never through the
@@ -194,24 +195,33 @@ async function putToCloudinary(
   body: Blob,
   fileName: string = 'unknown'
 ): Promise<string> {
-  console.log(`[upload] Starting Cloudinary upload: ${fileName} (${body.size} bytes)`);
+  console.log(`[upload] Starting Cloudinary upload via proxy: ${fileName} (${body.size} bytes)`);
 
   const formData = new FormData();
-  formData.append('file', body);
+  formData.append('file', body, fileName);
   formData.append('api_key', upload.apiKey);
   formData.append('timestamp', String(upload.timestamp));
   formData.append('signature', upload.signature);
   formData.append('folder', upload.folder);
   formData.append('public_id', upload.publicId);
+  formData.append('upload_url', upload.uploadUrl);
 
-  const res = await fetch(upload.uploadUrl, {
+  const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const proxyUrl = `${resolveApiBaseUrl()}/uploads/upload-proxy`;
+  const res = await fetch(proxyUrl, {
     method: 'POST',
     body: formData,
+    headers,
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    console.error(`[upload] Cloudinary upload failed for ${fileName} :: ${errText}`);
+    console.error(`[upload] Cloudinary upload failed via proxy for ${fileName} :: ${errText}`);
     throw new Error(`Cloudinary upload failed: ${errText}`);
   }
 

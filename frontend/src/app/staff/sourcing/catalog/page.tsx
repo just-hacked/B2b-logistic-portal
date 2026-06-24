@@ -277,7 +277,10 @@ export default function SourcingCatalogPage() {
     setForm({
       emoji: p.emoji, name: p.name, category: p.category, subcategory: p.subcategory,
       brand: p.brand, originCity: p.originCity, sku: p.sku,
-      priceCny: p.priceCny, moq: p.moq, sampleAvailable: p.sampleAvailable, samplePrice: p.samplePrice,
+      priceCny: p.priceCny.replace(/[^\d.]/g, ''),
+      moq: p.moq,
+      sampleAvailable: p.sampleAvailable,
+      samplePrice: p.samplePrice ? p.samplePrice.replace(/[^\d.]/g, '') : '',
       shortDescription: p.shortDescription, fullDescription: p.fullDescription,
       keyFeatures: p.keyFeatures.length ? p.keyFeatures : [''],
       specifications: p.specifications.length ? p.specifications : [{ key: '', value: '' }],
@@ -576,8 +579,17 @@ export default function SourcingCatalogPage() {
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Pricing</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-600 text-muted-foreground uppercase">Price Range CNY *</label>
-                    <input value={form.priceCny} onChange={e => setF('priceCny', e.target.value)} className="input-field mt-1" placeholder="¥10–20" />
+                    <label className="text-xs font-600 text-muted-foreground uppercase">Price CNY *</label>
+                    <input
+                      value={form.priceCny}
+                      onChange={e => setF('priceCny', e.target.value)}
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      className="input-field mt-1"
+                      placeholder="e.g. 15.50"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-600 text-muted-foreground uppercase">MOQ Units</label>
@@ -591,8 +603,16 @@ export default function SourcingCatalogPage() {
                   </div>
                   {form.sampleAvailable && (
                     <div className="col-span-2">
-                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price ¥ CNY</label>
-                      <input value={form.samplePrice} onChange={e => setF('samplePrice', e.target.value)} className="input-field mt-1" placeholder="e.g. ¥150" />
+                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price CNY</label>
+                      <input
+                        value={form.samplePrice}
+                        onChange={e => setF('samplePrice', e.target.value)}
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        className="input-field mt-1"
+                        placeholder="e.g. 150"
+                      />
                     </div>
                   )}
                 </div>

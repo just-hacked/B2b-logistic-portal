@@ -18,3 +18,50 @@ export const signUpload = async (req: Request, res: Response) => {
   // The client needs the bucket name to call uploadToSignedUrl(path, token, file).
   return ApiResponse.success(res, { bucket: getStorageBucket(), uploads }, "Signed upload URLs created", 201);
 };
+
+// POST /api/v1/uploads/upload-proxy — proxies the multipart file upload directly to Cloudinary
+// to completely bypass any browser CORS origin restrictions.
+export const uploadProxy = async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw new ApiError(400, "No file uploaded");
+  }
+
+  const { api_key, timestamp, signature, folder, public_id, upload_url } = req.body;
+
+  if (!upload_url || !upload_url.startsWith("https://api.cloudinary.com/")) {
+    throw new ApiError(400, "Invalid or missing Cloudinary upload URL");
+  }
+
+  const formData = new FormData();
+  const fileBlob = new Blob([req.file.buffer], { type: req.file.mimetype });
+  formData.append("file", fileBlob, req.file.originalname);
+  formData.append("api_key", api_key);
+  formData.append("timestamp", timestamp);
+  formData.append("signature", signature);
+  formData.append("folder", folder);
+  formData.append("public_id", public_id);
+
+  try {
+    const response = await fetch(upload_url, {
+      method: "POST",
+      body: formData,
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, error: data });
+    }
+
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error("[uploadProxy] Cloudinary proxy upload error:", err);
+    throw new ApiError(502, `Failed to forward upload to Cloudinary: ${err.message}`);
+  }
+};

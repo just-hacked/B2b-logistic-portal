@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import { useToast } from '@/components/ui/Toast';
@@ -146,15 +146,15 @@ function mapApiToCatalog(p: ApiProduct): CatalogProduct {
 }
 
 function formToPayload(form: Omit<CatalogProduct, 'id'>): CreateProductPayload {
-  const samplePriceNum = form.samplePrice ? parseFloat(form.samplePrice.replace('\u00A5', '')) : undefined;
-  const basePrice = parseFloat(form.priceCny.replace(/[^\d.]/g, '')) || 0;
+  const samplePriceNum = form.samplePrice ? parseFloat(form.samplePrice) : undefined;
+  const basePrice = parseFloat(form.priceCny) || 0;
   return {
     name: form.name.trim(),
     emoji: form.emoji || null,
     brand: form.brand || null,
     sku: form.sku || null,
     originCity: form.originCity || null,
-    priceRange: form.priceCny || null,
+    priceRange: form.priceCny ? `¥${form.priceCny}` : null,
     moq: form.moq,
     basePrice,
     sampleAvailable: form.sampleAvailable,
@@ -333,7 +333,10 @@ export default function AdminCatalogPage() {
     setForm({
       emoji: p.emoji, name: p.name, category: p.category, subcategory: p.subcategory,
       brand: p.brand, originCity: p.originCity, sku: p.sku,
-      priceCny: p.priceCny, moq: p.moq, sampleAvailable: p.sampleAvailable, samplePrice: p.samplePrice,
+      priceCny: p.priceCny.replace(/[^\d.]/g, ''),
+      moq: p.moq,
+      sampleAvailable: p.sampleAvailable,
+      samplePrice: p.samplePrice ? p.samplePrice.replace(/[^\d.]/g, '') : '',
       shortDescription: p.shortDescription, fullDescription: p.fullDescription,
       keyFeatures: p.keyFeatures.length ? p.keyFeatures : [''],
       specifications: p.specifications.length ? p.specifications : [{ key: '', value: '' }],
@@ -650,8 +653,17 @@ export default function AdminCatalogPage() {
                 <h4 className="text-xs font-700 text-muted-foreground uppercase tracking-wider mb-3">Pricing</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-600 text-muted-foreground uppercase">Price Range CNY *</label>
-                    <input value={form.priceCny} onChange={e => setF('priceCny', e.target.value)} className="input-field mt-1" placeholder="\u00A510\u201320" />
+                    <label className="text-xs font-600 text-muted-foreground uppercase">Price CNY *</label>
+                    <input
+                      value={form.priceCny}
+                      onChange={e => setF('priceCny', e.target.value)}
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      className="input-field mt-1"
+                      placeholder="e.g. 15.50"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-600 text-muted-foreground uppercase">MOQ Units</label>
@@ -665,8 +677,16 @@ export default function AdminCatalogPage() {
                   </div>
                   {form.sampleAvailable && (
                     <div className="col-span-2">
-                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price \u00A5 CNY</label>
-                      <input value={form.samplePrice} onChange={e => setF('samplePrice', e.target.value)} className="input-field mt-1" placeholder="e.g. \u00A5150" />
+                      <label className="text-xs font-600 text-muted-foreground uppercase">Sample Price CNY</label>
+                      <input
+                        value={form.samplePrice}
+                        onChange={e => setF('samplePrice', e.target.value)}
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        className="input-field mt-1"
+                        placeholder="e.g. 150"
+                      />
                     </div>
                   )}
                 </div>
